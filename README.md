@@ -1,0 +1,2 @@
+# LoadCompressor
+Multithreaded GZip
