@@ -12,7 +12,7 @@
 ### Via integration test
 1. Put test data into `LoadCompress.IntegrationTests/TestData`.
 2. Run `ApprovalTest`.
-3. Compressed and decompressed file will be saved at `CompressionResults` (`bin` fodler).
+3. Compressed and decompressed files will be saved at `CompressionResults` (`bin` fodler).
 
 ### Via CLI
 1. Run `dotnet LoadCompress.Cli.dll compress <source file path> <destination file path>` to compress file.

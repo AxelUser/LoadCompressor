@@ -84,6 +84,7 @@ namespace LoadCompress.Core.GZipFast.Operations
                 lock (_rentedBuffers)
                 {
                     ArrayPool<byte>.Shared.Return(_rentedBuffers[block.Id]);
+                    _rentedBuffers.Remove(block.Id);
                 }
             }
         }
