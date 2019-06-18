@@ -53,7 +53,7 @@ namespace LoadCompress.Core.GZipFast.Runners
             for (var i = 0; i < header.BlocksCount; i++)
             {
                 if(_isFailed)
-                    return;
+                    break;
                 var sourceBuffer = ArrayPool<byte>.Shared.Rent((int) header.BlockSize);
 
                 var bytesRead = source.Read(sourceBuffer.AsSpan(0, (int)header.BlockSize));
