@@ -5,27 +5,31 @@ using System.IO;
 using System.Threading;
 using LoadCompress.Core.GZipFast.Data;
 using LoadCompress.Core.GZipFast.Interfaces;
+using LoadCompress.Core.GZipFast.Queues;
+using LoadCompress.Core.Notification;
 
-namespace LoadCompress.Core.GZipFast.Operations
+namespace LoadCompress.Core.GZipFast.Runners
 {
-    internal class GZipDecompressionRunner: IGZipOperationRunner, IDisposable
+    internal class GZipCompressionRunner: IGZipOperationRunner, IDisposable
     {
-        private readonly ProgressNotifier _notifier;
+        private readonly IQueueFactory _queueFactory;
+        private readonly IProgressNotificationClient _notificationClient;
         private readonly GZipTransformationQueue _transformationQueue;
         private readonly List<Exception> _exceptions;
         private readonly CountdownEvent _onFinishedEvent;
         private readonly WorkersPool _pool;
-        private volatile bool _isFailed;
-
-        private readonly object _savingLocker = new object();
 
         private readonly Dictionary<int, byte[]> _rentedBuffers;
 
-        internal GZipDecompressionRunner(ProgressNotifier notifier)
+        private volatile bool _isFailed;
+        private readonly object _savingLocker = new object();
+
+        internal GZipCompressionRunner(IQueueFactory queueFactory, IProgressNotificationClient notificationClient, WorkersPool pool)
         {
-            _rentedBuffers = new Dictionary<int, byte[]>();
-            _notifier = notifier;
-            _pool = new WorkersPool();
+            _rentedBuffers  = new Dictionary<int, byte[]>();
+            _queueFactory = queueFactory;
+            _notificationClient = notificationClient;
+            _pool = pool;
             _transformationQueue = new GZipTransformationQueue(_pool, HandleError);
             _exceptions = new List<Exception>();
             _onFinishedEvent = new CountdownEvent(0);
@@ -36,48 +40,50 @@ namespace LoadCompress.Core.GZipFast.Operations
         public void RunForCompletion(GZipHeader header, Stream source, Stream destination)
         {
             _isFailed = false;
-            var defaultBlockSize = header.BlockSize;
-            var queue = new GZipDecompressionQueue(_transformationQueue);
+            var totalBlocks = header.BlocksCount;
+            var queue = _queueFactory.CreateCompressionQueue(_transformationQueue);
 
-            destination.Seek(0, SeekOrigin.Begin);
+            var completedBlocks = new List<GZipBlock>();
+
+            source.Seek(0, SeekOrigin.Begin);
+            destination.Seek(header.GetSize(), SeekOrigin.Begin);
 
             SetupCompletionEvent(header.BlocksCount);
-
-            _notifier.Start(header.BlocksCount);
 
             for (var i = 0; i < header.BlocksCount; i++)
             {
                 if(_isFailed)
-                    break;
+                    return;
+                var sourceBuffer = ArrayPool<byte>.Shared.Rent((int) header.BlockSize);
 
-                var sourceBuffer = ArrayPool<byte>.Shared.Rent(header[i].Size);
+                var bytesRead = source.Read(sourceBuffer.AsSpan(0, (int)header.BlockSize));
 
-                var bytesRead = source.Read(sourceBuffer.AsSpan(0, header[i].Size));
-
-                queue.Enqueue(header[i], sourceBuffer.AsMemory(0, bytesRead), HandleResult);
-
+                var block = new GZipBlock(i, 0, bytesRead);
                 lock (_rentedBuffers)
                 {
-                    _rentedBuffers[header[i].Id] = sourceBuffer;
+                    _rentedBuffers[block.Id] = sourceBuffer;
                 }
+                queue.Enqueue(block, sourceBuffer.AsMemory(0, bytesRead), HandleResult);
             }
 
             WaitForCompletion();
-            _notifier.Stop();
 
             if (_exceptions.Count > 0)
-                throw new AggregateException("Failed to decompress", _exceptions);
+                throw new AggregateException("Failed to compress", _exceptions);
+
+            header.MergeBlocks(completedBlocks);
+
+            WriteHeader(header, destination);
 
             void HandleResult(GZipBlock block, Memory<byte> result)
             {
                 lock (_savingLocker)
                 {
-                    var offset = block.Id * defaultBlockSize;
-                    destination.Seek(offset, SeekOrigin.Begin);
+                    completedBlocks.Add(block);
                     destination.Write(result.Span);
                 }
 
-                _notifier.TryNotify(block);
+                _notificationClient.TryNotify(block, totalBlocks);
 
                 SignalAsCompleted();
 
@@ -100,6 +106,19 @@ namespace LoadCompress.Core.GZipFast.Operations
             SetAsFailed();
         }
 
+        private void WriteHeader(GZipHeader header, Stream destination)
+        {
+            var headerSize = header.GetSize();
+
+            destination.Seek(0, SeekOrigin.Begin);
+            byte[] headerBuffer = ArrayPool<byte>.Shared.Rent(headerSize);
+
+            header.ToBytes(headerBuffer.AsSpan(0, headerSize));
+            destination.Write(headerBuffer.AsSpan(0, headerSize));
+
+            ArrayPool<byte>.Shared.Return(headerBuffer);
+        }
+
         private void SetupCompletionEvent(int totalBlocks) => _onFinishedEvent.Reset(totalBlocks);
 
         private void SignalAsCompleted() => _onFinishedEvent.Signal();
@@ -119,7 +138,6 @@ namespace LoadCompress.Core.GZipFast.Operations
         public void Dispose()
         {
             _onFinishedEvent?.Dispose();
-            _pool?.Dispose();
         }
     }
 }

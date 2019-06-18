@@ -26,7 +26,7 @@ namespace LoadCompress.Core.Tests.GZipFast
         [SetUp]
         public void SetUp()
         {
-            _source = GenerateBytes(_bytesCount);
+            _source = Utils.GenerateBytes(_bytesCount);
             _compressed = new MemoryStream();
             _compressor = new GZipCompressor();
         }
@@ -83,16 +83,6 @@ namespace LoadCompress.Core.Tests.GZipFast
             {
                 Interlocked.Increment(ref counter);
             }
-        }
-
-        private MemoryStream GenerateBytes(long bytesCount)
-        {
-            var source = new byte[bytesCount];
-            for (var i = 0; i < bytesCount; i++)
-            {
-                source[i] = byte.MaxValue;
-            }
-            return new MemoryStream(source);
         }
     }
 }

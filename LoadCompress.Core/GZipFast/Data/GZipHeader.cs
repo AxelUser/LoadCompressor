@@ -86,6 +86,12 @@ namespace LoadCompress.Core.GZipFast.Data
             return header;
         }
 
+        internal static GZipHeader CreateEmpty(int blocksCount, int blockSize)
+        {
+            Span<GZipBlock> blocks = new GZipBlock[blocksCount];
+            return new GZipHeader(blocks, blockSize);
+        }
+
         private const uint MagicNumber = 0xCAFED00D; // Dec 3405697037
 
         private readonly Span<GZipBlock> _blocks;

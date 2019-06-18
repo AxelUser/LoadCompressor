@@ -3,7 +3,7 @@ using System.Buffers;
 using LoadCompress.Core.GZipFast.Data;
 using LoadCompress.Core.GZipFast.Interfaces;
 
-namespace LoadCompress.Core.GZipFast.Operations
+namespace LoadCompress.Core.GZipFast.Queues
 {
     /// <summary>
     /// Delegate for compression/decompression.

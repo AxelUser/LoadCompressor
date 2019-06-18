@@ -3,7 +3,7 @@ using LoadCompress.Core.GZipFast.Data;
 using LoadCompress.Core.GZipFast.Interfaces;
 using Microsoft.IO;
 
-namespace LoadCompress.Core.GZipFast.Operations
+namespace LoadCompress.Core.GZipFast.Queues
 {
     internal class GZipDecompressionQueue: IGZipOperationQueue
     {

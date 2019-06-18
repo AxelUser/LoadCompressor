@@ -52,12 +52,13 @@ namespace LoadCompress.Benchmarks
         [Benchmark]
         public void RunFull()
         {
-            var processor = new GZipCompressor();
-            processor.Compress(_sourceStream, _destStream, _sourceFileBytesCount, 1.Mb());
-            _destStream.Flush();
-            processor.Decompress(_destStream, _validationStream);
-            _validationStream.Flush();
-            processor.Dispose();
+            using (var processor = new GZipCompressor())
+            {
+                processor.Compress(_sourceStream, _destStream, _sourceFileBytesCount, 1.Mb());
+                _destStream.Flush();
+                processor.Decompress(_destStream, _validationStream);
+                _validationStream.Flush();
+            }
         }
 
         [GlobalCleanup]

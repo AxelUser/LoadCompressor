@@ -2,6 +2,7 @@
 using System.Threading;
 using FluentAssertions;
 using LoadCompress.Core.GZipFast.Data;
+using LoadCompress.Core.Notification;
 using NUnit.Framework;
 
 namespace LoadCompress.Core.Tests.Threading
@@ -14,28 +15,28 @@ namespace LoadCompress.Core.Tests.Threading
         public void Start_should_start_notification_process()
         {
             var notifiedEvent = new AutoResetEvent(false);
-            var notifier = new ProgressNotifier(e => notifiedEvent.Set(), block => block.OriginalSize);
+            var notifier = new ProgressNotifier(e => notifiedEvent.Set(), block => block.OriginalSize, false);
 
-            notifier.Start(10);
-            notifier.TryNotify(new GZipBlock(0, 10, 20)).Should().BeTrue();
+            notifier.Start(true);
+            notifier.TryNotify(new GZipBlock(0, 10, 20), 10).Should().BeTrue();
 
             var wasFired = notifiedEvent.WaitOne(TimeSpan.FromMilliseconds(200));
             wasFired.Should().BeTrue("Notifications should work");
 
-            notifier.Stop();
+            notifier.Stop(true);
         }
 
         [Test]
         public void Start_should_fail_if_already_started()
         {
             var notifiedEvent = new AutoResetEvent(false);
-            var notifier = new ProgressNotifier(e => notifiedEvent.Set(), block => block.OriginalSize);
+            var notifier = new ProgressNotifier(e => notifiedEvent.Set(), block => block.OriginalSize, false);
 
-            notifier.Start(10);
-            notifier.Invoking(n => n.Start(5)).Should()
+            notifier.Start(true);
+            notifier.Invoking(n => n.Start(true)).Should()
                 .Throw<InvalidOperationException>();
 
-            notifier.Stop();
+            notifier.Stop(true);
         }
 
         [Test]
@@ -47,16 +48,16 @@ namespace LoadCompress.Core.Tests.Threading
             {
                 notifiedEvent.Signal();
                 firstNotificationFiredEvent.Set();
-            }, block => block.OriginalSize);
+            }, block => block.OriginalSize, false);
 
-            notifier.Start(10);
-            notifier.TryNotify(new GZipBlock(0, 10, 20)).Should().BeTrue();
+            notifier.Start(true);
+            notifier.TryNotify(new GZipBlock(0, 10, 20), 10).Should().BeTrue();
             firstNotificationFiredEvent.WaitOne(TimeSpan.FromMilliseconds(100)).Should()
                 .BeTrue("first notification should be handled");
 
-            notifier.Stop();
+            notifier.Stop(true);
 
-            notifier.TryNotify(new GZipBlock(0, 10, 20)).Should().BeFalse("notification was disabled");
+            notifier.TryNotify(new GZipBlock(0, 10, 20), 10).Should().BeFalse("notification was disabled");
             notifiedEvent.CurrentCount.Should().Be(1, "second notification was not fired");
         }
 
@@ -64,8 +65,8 @@ namespace LoadCompress.Core.Tests.Threading
         public void Stop_should_fail_if_not_started()
         {
             var notifiedEvent = new AutoResetEvent(false);
-            var notifier = new ProgressNotifier(e => notifiedEvent.Set(), block => block.OriginalSize);
-            notifier.Invoking(n => n.Stop()).Should().Throw<InvalidOperationException>();
+            var notifier = new ProgressNotifier(e => notifiedEvent.Set(), block => block.OriginalSize, false);
+            notifier.Invoking(n => n.Stop(true)).Should().Throw<InvalidOperationException>();
         }
 
         [Test]
@@ -77,18 +78,18 @@ namespace LoadCompress.Core.Tests.Threading
             {
                 notificationFiredEvent.Set();
                 allNotificationsFiredEvent.Signal();
-            }, block => block.OriginalSize);
+            }, block => block.OriginalSize, false);
 
-            notifier.Start(10);
-            notifier.TryNotify(new GZipBlock(0, 10, 20)).Should().BeTrue();
+            notifier.Start(true);
+            notifier.TryNotify(new GZipBlock(0, 10, 20), 10).Should().BeTrue();
             notificationFiredEvent.WaitOne(TimeSpan.FromMilliseconds(100)).Should().BeTrue();
-            notifier.Stop();
+            notifier.Stop(true);
 
-            notifier.Start(20);
-            notifier.TryNotify(new GZipBlock(0, 10, 20)).Should().BeTrue();
+            notifier.Start(true);
+            notifier.TryNotify(new GZipBlock(0, 10, 20), 20).Should().BeTrue();
             allNotificationsFiredEvent.Wait(TimeSpan.FromMilliseconds(100)).Should().BeTrue();
 
-            notifier.Stop();
+            notifier.Stop(true);
         }
 
         [Test]
@@ -100,12 +101,12 @@ namespace LoadCompress.Core.Tests.Threading
             {
                 notificationFiredEvent.Signal();
                 passedStatus = e;
-            }, block => block.OriginalSize);
-            notifier.Start(10);
+            }, block => block.OriginalSize, false);
+            notifier.Start(true);
 
-            notifier.TryNotify(new GZipBlock(0, 15, 20)).Should().BeTrue();
-            notifier.TryNotify(new GZipBlock(0, 15, 20)).Should().BeTrue();
-            notifier.TryNotify(new GZipBlock(0, 15, 20)).Should().BeTrue();
+            notifier.TryNotify(new GZipBlock(0, 15, 20), 10).Should().BeTrue();
+            notifier.TryNotify(new GZipBlock(0, 15, 20), 10).Should().BeTrue();
+            notifier.TryNotify(new GZipBlock(0, 15, 20), 10).Should().BeTrue();
 
             notificationFiredEvent.Wait(TimeSpan.FromMilliseconds(100)).Should().BeTrue();
             passedStatus.Should().NotBeNull();
@@ -113,7 +114,7 @@ namespace LoadCompress.Core.Tests.Threading
             passedStatus.ProceededBlocks.Should().Be(3);
             passedStatus.TotalBytesProceeded.Should().Be(20 * 3);
 
-            notifier.Stop();
+            notifier.Stop(true);
         }
     }
 }
