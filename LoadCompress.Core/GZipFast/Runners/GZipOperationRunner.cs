@@ -4,30 +4,31 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using LoadCompress.Core.GZipFast.Data;
+using LoadCompress.Core.GZipFast.Handlers;
 using LoadCompress.Core.GZipFast.Interfaces;
 using LoadCompress.Core.GZipFast.Queues;
 using LoadCompress.Core.Notification;
 
 namespace LoadCompress.Core.GZipFast.Runners
 {
-    internal class GZipDecompressionRunner: IGZipOperationRunner, IDisposable
+    internal class GZipOperationRunner: IGZipOperationRunner, IDisposable
     {
-        private readonly IQueueFactory _queueFactory;
+        private readonly IHandlerFactory _handlerFactory;
         private readonly IProgressNotificationClient _notificationClient;
         private readonly GZipTransformationQueue _transformationQueue;
         private readonly List<Exception> _exceptions;
         private readonly CountdownEvent _onFinishedEvent;
         private readonly WorkersPool _pool;
-        private volatile bool _isFailed;
-
-        private readonly object _savingLocker = new object();
 
         private readonly Dictionary<int, byte[]> _rentedBuffers;
 
-        internal GZipDecompressionRunner(IQueueFactory queueFactory, IProgressNotificationClient notificationClient, WorkersPool pool)
+        private volatile bool _isFailed;
+        private readonly object _savingLocker = new object();
+
+        internal GZipOperationRunner(IHandlerFactory handlerFactory, IProgressNotificationClient notificationClient, WorkersPool pool)
         {
             _rentedBuffers = new Dictionary<int, byte[]>();
-            _queueFactory = queueFactory;
+            _handlerFactory = handlerFactory;
             _notificationClient = notificationClient;
             _pool = pool;
             _transformationQueue = new GZipTransformationQueue(_pool, HandleError);
@@ -39,43 +40,42 @@ namespace LoadCompress.Core.GZipFast.Runners
         /// <inheritdoc />
         public void RunForCompletion(GZipHeader header, Stream source, Stream destination)
         {
+            var handler = _handlerFactory.Create();
+            var innerResultHandler = handler.CreateResultHandler(destination, header);
             _isFailed = false;
-            var defaultBlockSize = header.BlockSize;
             var totalBlocks = header.BlocksCount;
-            var queue = _queueFactory.CreateDecompressionQueue(_transformationQueue);
-
-            destination.Seek(0, SeekOrigin.Begin);
+            var queue = handler.CreateQueue(_transformationQueue);
 
             SetupCompletionEvent(header.BlocksCount);
 
             for (var i = 0; i < header.BlocksCount; i++)
             {
-                if(_isFailed)
+                if (_isFailed)
                     break;
+                var sourceBuffer = ArrayPool<byte>.Shared.Rent(handler.GetBlockSize(header, i));
 
-                var sourceBuffer = ArrayPool<byte>.Shared.Rent(header[i].Size);
+                var bytesRead = source.Read(sourceBuffer.AsSpan(0, handler.GetBlockSize(header, i)));
+
+                var block = handler.GetBlock(header, i, bytesRead);
                 lock (_rentedBuffers)
                 {
-                    _rentedBuffers[header[i].Id] = sourceBuffer;
+                    _rentedBuffers[block.Id] = sourceBuffer;
                 }
-
-                var bytesRead = source.Read(sourceBuffer.AsSpan(0, header[i].Size));
-
-                queue.Enqueue(header[i], sourceBuffer.AsMemory(0, bytesRead), HandleResult);
+                queue.Enqueue(block, sourceBuffer.AsMemory(0, bytesRead), HandleResult);
             }
 
             WaitForCompletion();
 
             if (_exceptions.Count > 0)
-                throw new AggregateException("Failed to decompress", _exceptions);
+                throw new AggregateException("Failed to compress", _exceptions);
+
+            handler.OnCompletedSuccessfully(destination, header);
 
             void HandleResult(GZipBlock block, Memory<byte> result)
             {
                 lock (_savingLocker)
                 {
-                    var offset = block.Id * defaultBlockSize;
-                    destination.Seek(offset, SeekOrigin.Begin);
-                    destination.Write(result.Span);
+                    innerResultHandler(block, result);
                 }
 
                 _notificationClient.TryNotify(block, totalBlocks);

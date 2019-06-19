@@ -4,7 +4,7 @@ using System.IO;
 
 namespace LoadCompress.Core.GZipFast.Data
 {
-    internal readonly ref struct GZipHeader
+    internal readonly struct GZipHeader
     {
         internal const byte MinimalSize = sizeof(uint) + sizeof(int) + sizeof(long);
 
@@ -12,7 +12,7 @@ namespace LoadCompress.Core.GZipFast.Data
 
         internal readonly long BlockSize;
 
-        internal GZipHeader(Span<GZipBlock> blocks, long blockSize)
+        internal GZipHeader(GZipBlock[] blocks, long blockSize)
         {
             BlockSize = blockSize;
             BlocksCount = blocks.Length;
@@ -74,7 +74,7 @@ namespace LoadCompress.Core.GZipFast.Data
             var blocksSize = BitConverter.ToInt64(buffer.Slice(4, sizeof(long)));
             var blocksCount = BitConverter.ToInt32(buffer.Slice(12, sizeof(int)));
 
-            var header = new GZipHeader(new Span<GZipBlock>(new GZipBlock[blocksCount]), blocksSize);
+            var header = new GZipHeader(new GZipBlock[blocksCount], blocksSize);
 
             buffer = stackalloc byte[GZipBlock.SelfSize];
             for (var i = 0; i < header.BlocksCount; i++)
@@ -88,12 +88,11 @@ namespace LoadCompress.Core.GZipFast.Data
 
         internal static GZipHeader CreateEmpty(int blocksCount, int blockSize)
         {
-            Span<GZipBlock> blocks = new GZipBlock[blocksCount];
-            return new GZipHeader(blocks, blockSize);
+            return new GZipHeader(new GZipBlock[blocksCount], blockSize);
         }
 
         private const uint MagicNumber = 0xCAFED00D; // Dec 3405697037
 
-        private readonly Span<GZipBlock> _blocks;
+        private readonly GZipBlock[] _blocks;
     }
 }

@@ -2,6 +2,7 @@
 using System.IO;
 using System.Threading;
 using LoadCompress.Core.GZipFast.Data;
+using LoadCompress.Core.GZipFast.Handlers;
 using LoadCompress.Core.GZipFast.Interfaces;
 using LoadCompress.Core.GZipFast.Queues;
 using LoadCompress.Core.GZipFast.Runners;
@@ -30,9 +31,13 @@ namespace LoadCompress.Core.GZipFast
 
             using (var notifier = CreateAndStartNotification())
             using (var pool = new WorkersPool())
-            using (var runner = new GZipCompressionRunner(_queueFactory, notifier, pool))
+            using (var runner = new GZipOperationRunner(new CompressionHandlerFactory(_queueFactory), notifier, pool))
             {
-                runner.RunForCompletion(GZipHeader.CreateEmpty(blocksCount, blockSize), source, dest);
+                var header = GZipHeader.CreateEmpty(blocksCount, blockSize);
+                source.Seek(0, SeekOrigin.Begin);
+                dest.Seek(header.GetSize(), SeekOrigin.Begin);
+
+                runner.RunForCompletion(header, source, dest);
             }
         }
 
@@ -46,8 +51,9 @@ namespace LoadCompress.Core.GZipFast
 
             using (var notifier = CreateAndStartNotification())
             using (var pool = new WorkersPool())
-            using (var runner = new GZipDecompressionRunner(_queueFactory, notifier, pool))
+            using (var runner = new GZipOperationRunner(new DecompressionHandlerFactory(_queueFactory), notifier, pool))
             {
+                dest.Seek(0, SeekOrigin.Begin);
                 runner.RunForCompletion(header, source, dest);
             }
         }
